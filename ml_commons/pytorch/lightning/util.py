@@ -1,4 +1,5 @@
 import copy
+import logging
 from pytorch_lightning import Trainer
 
 
@@ -40,3 +41,12 @@ def generate_random_hparams(parameters):
         elif param['type'] == 'choice':
             hparams[param['name']] = param['values'][0]
     return hparams
+
+
+def override_lightning_logger():
+    from ml_commons.util.logger import get_default_handler
+    logger = logging.getLogger('lightning')
+    logger.handlers = []
+    handler = get_default_handler()
+    logger.addHandler(handler)
+    logger.propagate = False

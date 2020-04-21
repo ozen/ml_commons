@@ -1,13 +1,13 @@
-module: tests.test_module.TestModule
+module: test_module.TestModule
 experiments_dir: experiments
 experiment_name: test
 
 data_root: data
-batch_size: 32
+batch_size: 512
 save_top_k: 5
 
 trainer:
-  max_epochs: 50
+  max_epochs: 10
   gpus: [0]
 
 optimization:
@@ -19,4 +19,4 @@ optimization:
       value_type: float
       log_scale: True
   trainer:
-    max_epochs: 5
+    max_epochs: 1

@@ -1,6 +1,5 @@
 import os
 from abc import ABC
-import logging
 import copy
 
 from ax.service.managed_loop import optimize
@@ -13,8 +12,9 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from ml_commons.ax import load_ax_experiment
 from .callbacks import BatchEarlyStopping, ObjectiveMonitor
 from .util import add_trainer_args, update_config_with_hparams, generate_random_hparams
+from ml_commons.util.logger import get_logger
 
-logging_logger = logging.getLogger(__name__)
+logging_logger = get_logger()
 
 
 class AxLightningModule(LightningModule, ABC):
@@ -32,19 +32,23 @@ class AxLightningModule(LightningModule, ABC):
         self.enable_batch_early_stop = False
 
     def training_step(self, batch, batch_idx):
-        loss = self.forward(batch)
+        x, y = batch
+        logits = self.forward(x)
+        loss = self.loss(logits, y)
         return {
             'loss': loss,
             'log': {'loss/train': loss}
         }
 
     def validation_step(self, batch, batch_idx):
-        loss = self.forward(batch)
-        return {'loss': loss}
+        x, y = batch
+        logits = self.forward(x)
+        loss = self.loss(logits, y)
+        return {'val_loss': loss}
 
     def validation_epoch_end(self, outputs):
         val_loss_mean = torch.stack([x['val_loss'] for x in outputs]).mean()
-        logging_logger.info(f'Epoch {self.current_epoch + 1} val loss: {val_loss_mean:.3f}')
+        logging_logger.info(f'Epoch {self.current_epoch} val loss: {val_loss_mean:.3f}')
         return {
             'val_loss': val_loss_mean,
             'log': {'loss/val': val_loss_mean}
@@ -160,11 +164,15 @@ class AxLightningModule(LightningModule, ABC):
         experiment_name = config['experiment_name']
 
         if fast_dev_run:
-            logging_logger.info('Fast dev run')
             hparams = generate_random_hparams(config['optimization']['parameters'])
             cfg = update_config_with_hparams(config, hparams)
             model = cls(cfg)
-            trainer = Trainer(fast_dev_run=True, weights_summary='full')
+            trainer = Trainer(
+                fast_dev_run=True,
+                logger=False,
+                checkpoint_callback=False,
+                weights_summary='full'
+            )
             trainer.fit(model)
             del trainer
             del model
@@ -201,7 +209,7 @@ class AxLightningModule(LightningModule, ABC):
         tensorboard_logger = TensorBoardLogger(os.path.join(experiment_path, 'tensorboard_logs'), name='')
 
         checkpoint_callback = ModelCheckpoint(
-            filepath=os.path.join(experiment_path, 'checkpoints'),
+            filepath=os.path.join(experiment_path, 'checkpoints', f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
             monitor=cls.objective_name,
             mode='min' if cls.minimize_objective else 'max',
             save_top_k=config.get('save_top_k', -1)
@@ -227,7 +235,12 @@ class AxLightningModule(LightningModule, ABC):
         )
 
         if fast_dev_run:
-            trainer = Trainer(fast_dev_run=True)
+            trainer = Trainer(
+                fast_dev_run=True,
+                logger=False,
+                checkpoint_callback=False,
+                weights_summary='full',
+            )
             trainer.fit(model)
             del trainer
 
@@ -236,7 +249,7 @@ class AxLightningModule(LightningModule, ABC):
             checkpoint_callback=checkpoint_callback,
             early_stop_callback=early_stop_callback,
             callbacks=callbacks,
-            weights_summary='top' if verbose else None,
+            weights_summary='top' if (verbose and not fast_dev_run) else None,
             num_sanity_val_steps=0,
             **trainer_args
         )

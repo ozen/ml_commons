@@ -6,6 +6,7 @@ from importlib import import_module
 from argparse import ArgumentParser, FileType
 import yaml
 
+from ml_commons.pytorch.lightning.util import override_lightning_logger
 from ml_commons.util.path import uniquify_path
 from ml_commons.util.stdout_capturing import capture_stdout
 
@@ -19,6 +20,8 @@ def automain(function):
                 and main_filename.endswith(">")
         ):
             raise RuntimeError("Cannot use @automain decorator in interactive mode.")
+
+        override_lightning_logger()
 
         parser = ArgumentParser()
         parser.add_argument('config_file', type=FileType('r'))

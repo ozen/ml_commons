@@ -1,10 +1,11 @@
-import logging
 import numpy as np
 from torch import is_tensor
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.base import Callback
 
-logging_logger = logging.getLogger(__name__)
+from ml_commons.util.logger import get_logger
+
+logging_logger = get_logger()
 
 
 class BatchEarlyStopping(Callback):
