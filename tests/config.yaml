@@ -1,0 +1,22 @@
+module: tests.test_module.TestModule
+experiments_dir: experiments
+experiment_name: test
+
+data_root: data
+batch_size: 32
+save_top_k: 5
+
+trainer:
+  max_epochs: 50
+  gpus: [0]
+
+optimization:
+  total_trials: 5
+  parameters:
+    - name: lr
+      type: range
+      bounds: [1.0e-6, 1.0e-3]
+      value_type: float
+      log_scale: True
+  trainer:
+    max_epochs: 5
