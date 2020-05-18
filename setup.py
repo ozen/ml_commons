@@ -5,5 +5,12 @@ setup(
     version='1.0',
     author='Yigit Ozen',
     packages=find_packages(),
-    install_requires=['numpy', 'h5py', 'tqdm', 'torch', 'torchvision', 'pytorch-lightning', 'ax-platform', 'pyyaml']
+    install_requires=['numpy', 'h5py', 'tqdm', 'torch', 'torchvision', 'pytorch-lightning',
+                      'ax-platform', 'pyyaml', 'yacs'],
+    entry_points={
+        "console_scripts": [
+            "train = ml_commons.pytorch.lightning.main:train",
+            "optimize_and_train = ml_commons.pytorch.lightning.main:optimize_and_train",
+        ],
+    },
 )

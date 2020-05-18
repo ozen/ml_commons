@@ -1,6 +1,5 @@
 import os
 from abc import ABC
-import copy
 
 from ax.service.managed_loop import optimize
 from ax import save
@@ -10,9 +9,9 @@ from pytorch_lightning.logging import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from ml_commons.ax import load_ax_experiment
-from .callbacks import BatchEarlyStopping, ObjectiveMonitor
-from .util import add_trainer_args, update_config_with_hparams, generate_random_hparams
 from ml_commons.util.logger import get_logger
+from .callbacks import BatchEarlyStopping, ObjectiveMonitor
+from .config import AxCfgNode
 
 logging_logger = get_logger()
 
@@ -24,10 +23,9 @@ class AxLightningModule(LightningModule, ABC):
     objective_name = 'val_loss'
     minimize_objective = True
 
-    def __init__(self, config):
+    def __init__(self, cfg):
         super().__init__()
-        self.config = copy.deepcopy(config)
-
+        self.cfg = cfg
         self.batch_early_stop_callback = None
         self.enable_batch_early_stop = False
 
@@ -67,7 +65,7 @@ class AxLightningModule(LightningModule, ABC):
             return -1
 
     def on_save_checkpoint(self, checkpoint):
-        checkpoint['config'] = self.config
+        checkpoint['cfg'] = self.cfg
 
     @classmethod
     def load_from_checkpoint(cls, checkpoint_path, map_location=None, **kwargs):
@@ -76,8 +74,8 @@ class AxLightningModule(LightningModule, ABC):
         else:
             checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
 
-        ckpt_config = checkpoint['config']
-        model = cls(ckpt_config)
+        ckpt_cfg = checkpoint['cfg']
+        model = cls(ckpt_cfg)
         model.load_state_dict(checkpoint['state_dict'])
         model.on_load_checkpoint(checkpoint)
         return model
@@ -104,41 +102,25 @@ class AxLightningModule(LightningModule, ABC):
         return train_loss_early_stop_callback, early_stop_callback
 
     @classmethod
-    def _get_ax_evaluation_function(cls, config):
+    def _get_ax_evaluation_function(cls, config: AxCfgNode):
         def ax_evaluation_function(hparams):
             logging_logger.info(f'Evaluating parameters: {hparams}')
 
-            cfg = update_config_with_hparams(config, hparams)
+            cfg = config.clone_with_hparams(hparams)
 
             # create the model
             model = cls(cfg)
             callbacks = []
 
             # configure early stopping
-            train_loss_early_stop_patience = cfg['optimization'].get('train_patience', False)
-            early_stop_patience = cfg['optimization'].get('val_patience', False)
             train_loss_early_stop_callback, early_stop_callback = cls._get_early_stopping_callbacks(
-                train_loss_early_stop_patience, early_stop_patience)
+                cfg.optimization.train_patience, cfg.optimization.val_patience)
             if train_loss_early_stop_callback is not None:
                 callbacks.append(train_loss_early_stop_callback)
 
             # configure monitoring
             objective_monitor = ObjectiveMonitor(objective=cls.objective_name, minimize=True)
             callbacks.append(objective_monitor)
-
-            # determine Trainer args
-            trainer_args = add_trainer_args(
-                source=cfg['trainer'],
-                destination=None,
-                allowed=['gradient_clip_val', 'process_position', 'num_nodes', 'gpus', 'num_tpu_cores',
-                         'log_gpu_memory', 'progress_bar_refresh_rate', 'accumulate_grad_batches',
-                         'distributed_backend', 'amp_level', 'reload_dataloaders_every_epoch', 'precision']
-            )
-            trainer_args = add_trainer_args(
-                source=cfg['optimization']['trainer'],
-                destination=trainer_args,
-                allowed=['check_val_every_n_epoch', 'train_percent_check', 'val_percent_check', 'max_epochs',
-                         'min_epochs', 'max_steps', 'min_steps', 'val_check_interval'])
 
             # train
             trainer = Trainer(
@@ -148,7 +130,7 @@ class AxLightningModule(LightningModule, ABC):
                 callbacks=callbacks,
                 weights_summary=None,
                 num_sanity_val_steps=0,
-                **trainer_args
+                **cfg.get_optimization_trainer_args()
             )
             trainer.fit(model)
             del trainer
@@ -159,13 +141,11 @@ class AxLightningModule(LightningModule, ABC):
         return ax_evaluation_function
 
     @classmethod
-    def optimize_and_train(cls, config, fast_dev_run=True):
-        experiment_path = config['experiment_path']
-        experiment_name = config['experiment_name']
+    def optimize_and_train(cls, cfg: AxCfgNode, fast_dev_run=True):
+        assert isinstance(cfg, AxCfgNode)
 
         if fast_dev_run:
-            hparams = generate_random_hparams(config['optimization']['parameters'])
-            cfg = update_config_with_hparams(config, hparams)
+            cfg = cfg.clone_with_random_hparams()
             model = cls(cfg)
             trainer = Trainer(
                 fast_dev_run=True,
@@ -177,62 +157,49 @@ class AxLightningModule(LightningModule, ABC):
             del trainer
             del model
 
-        logging_logger.info(f'Running experiment "{experiment_path}"')
+        logging_logger.info(f'Running experiment "{cfg.experiment_path}"')
 
-        if config.get('load_ax_experiment') is not None:
-            best_parameters, ax_experiment = load_ax_experiment(config['load_ax_experiment'])
+        if cfg.load_ax_experiment:
+            best_parameters, ax_experiment = load_ax_experiment(cfg.load_ax_experiment)
         else:
             best_parameters, _, ax_experiment, _ = optimize(
-                config['optimization']['parameters'],
-                evaluation_function=cls._get_ax_evaluation_function(config),
+                cfg.optimization.parameters,
+                evaluation_function=cls._get_ax_evaluation_function(cfg),
                 minimize=cls.minimize_objective,
-                experiment_name=experiment_name,
-                total_trials=config['optimization'].get('total_trials', 10)
+                experiment_name=cfg.experiment_name,
+                total_trials=cfg.optimization.total_trials
             )
-            save(ax_experiment, os.path.join(experiment_path, 'ax_experiment.json'))
+            save(ax_experiment, os.path.join(cfg.experiment_path, 'ax_experiment.json'))
 
         logging_logger.info(f'Training with best parameters: {best_parameters}')
 
-        cfg = update_config_with_hparams(config, best_parameters)
-
+        cfg = cfg.clone_with_hparams(best_parameters)
         cls.fit(cfg, verbose=False)
 
     @classmethod
-    def fit(cls, config, fast_dev_run=False, verbose=True):
-        experiment_path = config['experiment_path']
-        if verbose:
-            logging_logger.info(f'Running experiment "{experiment_path}"')
+    def fit(cls, cfg: AxCfgNode, fast_dev_run=False, verbose=True):
+        assert isinstance(cfg, AxCfgNode)
 
-        model = cls(config)
+        if verbose:
+            logging_logger.info(f'Running experiment "{cfg.experiment_path}"')
+
+        model = cls(cfg)
         callbacks = []
 
-        tensorboard_logger = TensorBoardLogger(os.path.join(experiment_path, 'tensorboard_logs'), name='')
+        tensorboard_logger = TensorBoardLogger(os.path.join(cfg.experiment_path, 'tensorboard_logs'), name='')
 
         checkpoint_callback = ModelCheckpoint(
-            filepath=os.path.join(experiment_path, 'checkpoints', f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
+            filepath=os.path.join(cfg.experiment_path, 'checkpoints', f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
             monitor=cls.objective_name,
             mode='min' if cls.minimize_objective else 'max',
-            save_top_k=config.get('save_top_k', -1)
+            save_top_k=cfg.save_top_k
         )
 
         # configure early stopping
-        train_loss_early_stop_patience = config.get('train_patience', False)
-        early_stop_patience = config.get('val_patience', False)
         train_loss_early_stop_callback, early_stop_callback = cls._get_early_stopping_callbacks(
-            train_loss_early_stop_patience, early_stop_patience)
+            cfg.train_patience, cfg.val_patience)
         if train_loss_early_stop_callback is not None:
             callbacks.append(train_loss_early_stop_callback)
-
-        # determine Trainer args
-        trainer_args = add_trainer_args(
-            source=config['trainer'],
-            destination=None,
-            allowed=['gradient_clip_val', 'process_position', 'num_nodes', 'gpus', 'num_tpu_cores',
-                     'log_gpu_memory', 'progress_bar_refresh_rate', 'accumulate_grad_batches',
-                     'distributed_backend', 'amp_level', 'reload_dataloaders_every_epoch', 'precision',
-                     'check_val_every_n_epoch', 'train_percent_check', 'val_percent_check', 'max_epochs',
-                     'min_epochs', 'max_steps', 'min_steps', 'val_check_interval']
-        )
 
         if fast_dev_run:
             trainer = Trainer(
@@ -251,6 +218,6 @@ class AxLightningModule(LightningModule, ABC):
             callbacks=callbacks,
             weights_summary='top' if (verbose and not fast_dev_run) else None,
             num_sanity_val_steps=0,
-            **trainer_args
+            **cfg.get_trainer_args()
         )
         trainer.fit(model)

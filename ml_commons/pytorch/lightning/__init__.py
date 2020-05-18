@@ -1,2 +1,2 @@
 from .module import AxLightningModule
-from .automain import automain
+from .main import automain, setup_experiment
