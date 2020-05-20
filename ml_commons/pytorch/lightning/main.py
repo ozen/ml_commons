@@ -6,7 +6,8 @@ from glob import glob
 from importlib import import_module
 from argparse import ArgumentParser, FileType
 
-from ml_commons.pytorch.lightning.config import get_cfg
+from ml_commons.pytorch.lightning import AxLightningModule
+from ml_commons.pytorch.lightning.config import get_cfg, AxCfgNode
 from ml_commons.pytorch.lightning.util import override_lightning_logger
 from ml_commons.util.stdout_capturing import capture_stdout
 
@@ -26,7 +27,7 @@ def setup_experiment(config_file=None):
         config_file = args.config_file.name
 
     # create the config dictionary
-    cfg = get_cfg(config_file)
+    cfg: AxCfgNode = get_cfg(config_file)
 
     # add source path to the sys.path for module import
     sys.path.append(cfg.source_path)
@@ -34,7 +35,15 @@ def setup_experiment(config_file=None):
     # import experiment module
     module_parts = cfg.module.split('.')
     module = import_module('.'.join(module_parts[:-1]))
-    cls = getattr(module, module_parts[-1])
+    cls: AxLightningModule = getattr(module, module_parts[-1])
+
+    # merge model config
+    if hasattr(cls, 'get_model_cfg'):
+        model_cfg: AxCfgNode = cls.get_model_cfg()
+        model_cfg.merge_from_other_cfg(cfg.model)
+        cfg.defrost()
+        cfg.model = model_cfg
+        cfg.freeze()
 
     # create experiment directory
     os.makedirs(cfg.experiment_path)

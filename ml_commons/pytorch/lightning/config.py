@@ -112,6 +112,8 @@ _C.optimization.trainer = AxCfgNode(new_allowed=True)
 
 _C.hparams = AxCfgNode()
 
+_C.model = AxCfgNode(new_allowed=True)
+
 
 def get_cfg(config_file_path):
     cfg = _C.clone()
