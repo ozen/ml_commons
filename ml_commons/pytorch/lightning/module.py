@@ -143,6 +143,7 @@ class AxLightningModule(LightningModule, ABC):
     @classmethod
     def optimize_and_train(cls, cfg: AxCfgNode, fast_dev_run=True):
         assert isinstance(cfg, AxCfgNode)
+        assert cls.objective_name is not None
 
         if fast_dev_run:
             cfg = cfg.clone_with_random_hparams()
@@ -188,12 +189,18 @@ class AxLightningModule(LightningModule, ABC):
 
         tensorboard_logger = TensorBoardLogger(os.path.join(cfg.experiment_path, 'tensorboard_logs'), name='')
 
-        checkpoint_callback = ModelCheckpoint(
-            filepath=os.path.join(cfg.experiment_path, 'checkpoints', f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
-            monitor=cls.objective_name,
-            mode='min' if cls.minimize_objective else 'max',
-            save_top_k=cfg.save_top_k
-        )
+        if cls.objective_name is not None:
+            checkpoint_callback = ModelCheckpoint(
+                filepath=os.path.join(cfg.experiment_path, 'checkpoints', f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
+                monitor=cls.objective_name,
+                mode='min' if cls.minimize_objective else 'max',
+                save_top_k=cfg.save_top_k
+            )
+        else:
+            checkpoint_callback = ModelCheckpoint(
+                filepath=os.path.join(cfg.experiment_path, 'checkpoints', '{epoch}'),
+                save_top_k=-1
+            )
 
         # configure early stopping
         train_loss_early_stop_callback, early_stop_callback = cls._get_early_stopping_callbacks(
@@ -207,6 +214,7 @@ class AxLightningModule(LightningModule, ABC):
                 logger=False,
                 checkpoint_callback=False,
                 weights_summary='full',
+                **cfg.get_trainer_args()
             )
             trainer.fit(model)
             del trainer

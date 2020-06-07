@@ -46,7 +46,7 @@ class AxCfgNode(CfgNode):
         depr_arg_names = Trainer.get_deprecated_arg_names()
 
         for arg, arg_types, arg_default in Trainer.get_init_arguments_and_types():
-            if arg not in depr_arg_names and arg in allowed_args:
+            if arg not in depr_arg_names and arg in allowed_args and arg in self.trainer:
                 trainer_args[arg] = self.trainer[arg]
 
         return trainer_args
@@ -110,7 +110,7 @@ _C.optimization.val_patience = False
 
 _C.optimization.trainer = AxCfgNode(new_allowed=True)
 
-_C.hparams = AxCfgNode()
+_C.hparams = AxCfgNode(new_allowed=True)
 
 _C.model = AxCfgNode(new_allowed=True)
 
