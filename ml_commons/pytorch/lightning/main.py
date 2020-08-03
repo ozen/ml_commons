@@ -90,11 +90,13 @@ def automain(function):
 
 def optimize_and_train():
     cls, cfg = setup_experiment()
-    with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-        cls.optimize_and_train(cfg)
+    # TODO: Fix capture stdout for Windows and re-enable
+    # with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
+    cls.optimize_and_train(cfg)
 
 
 def train():
     cls, cfg = setup_experiment()
-    with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-        cls.fit(cfg, fast_dev_run=True)
+    # TODO: Fix capture stdout for Windows and re-enable
+    # with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
+    cls.fit(cfg, fast_dev_run=True)

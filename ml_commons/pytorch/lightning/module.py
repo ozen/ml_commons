@@ -1,5 +1,6 @@
 import os
 from abc import ABC
+from datetime import datetime
 
 from ax.service.managed_loop import optimize
 from ax import save
@@ -17,9 +18,6 @@ logging_logger = get_logger()
 
 
 class AxLightningModule(LightningModule, ABC):
-    """
-    Works with pytorch-lightning v0.7.x
-    """
     objective_name = 'val_loss'
     minimize_objective = True
 
@@ -103,11 +101,7 @@ class AxLightningModule(LightningModule, ABC):
 
     @classmethod
     def _get_ax_evaluation_function(cls, config: AxCfgNode):
-        def ax_evaluation_function(hparams):
-            logging_logger.info(f'Evaluating parameters: {hparams}')
-
-            cfg = config.clone_with_hparams(hparams)
-
+        def train_and_evaluate(cfg):
             # create the model
             model = cls(cfg)
             callbacks = []
@@ -122,10 +116,30 @@ class AxLightningModule(LightningModule, ABC):
             objective_monitor = ObjectiveMonitor(objective=cls.objective_name, minimize=True)
             callbacks.append(objective_monitor)
 
+            # configure model checkpointing
+            if cfg.optimization.save_top_k is not None and cfg.optimization.save_top_k > 0:
+                if cls.objective_name is not None:
+                    checkpoint_callback = ModelCheckpoint(
+                        filepath=os.path.join(cfg.experiment_path, 'checkpoints', 'trials',
+                                              datetime.now().strftime('%y%m%d_%H%M%S'),
+                                              f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
+                        monitor=cls.objective_name,
+                        mode='min' if cls.minimize_objective else 'max',
+                        save_top_k=cfg.optimization.save_top_k
+                    )
+                else:
+                    checkpoint_callback = ModelCheckpoint(
+                        filepath=os.path.join(cfg.experiment_path, 'checkpoints', 'trials',
+                                              datetime.now().isoformat(), '{epoch}'),
+                        save_top_k=cfg.optimization.save_top_k
+                    )
+            else:
+                checkpoint_callback = None
+
             # train
             trainer = Trainer(
                 logger=False,
-                checkpoint_callback=False,
+                checkpoint_callback=checkpoint_callback,
                 early_stop_callback=early_stop_callback,
                 callbacks=callbacks,
                 weights_summary=None,
@@ -138,10 +152,31 @@ class AxLightningModule(LightningModule, ABC):
             logging_logger.info(f'Best result: {objective_monitor.best}')
             return objective_monitor.best
 
+        def ax_evaluation_function(hparams):
+            logging_logger.info(f'Evaluating parameters: {hparams}')
+
+            cfg = config.clone_with_hparams(hparams)
+
+            if cfg.optimization.k_fold == 0:
+                return train_and_evaluate(cfg)
+            else:
+                # k-fold cross validation
+                metric = 0.0
+                for fold in range(cfg.optimization.k_fold):
+                    logging_logger.info(f'Fold {fold+1}/{cfg.optimization.k_fold}')
+                    cfg.defrost()
+                    cfg.current_fold = fold
+                    cfg.freeze()
+                    metric += train_and_evaluate(cfg)
+                return metric / cfg.optimization.k_fold
+
         return ax_evaluation_function
 
     @classmethod
     def optimize_and_train(cls, cfg: AxCfgNode, fast_dev_run=True):
+        """
+        Runs Ax optimization loop
+        """
         assert isinstance(cfg, AxCfgNode)
         assert cls.objective_name is not None
 
@@ -179,6 +214,9 @@ class AxLightningModule(LightningModule, ABC):
 
     @classmethod
     def fit(cls, cfg: AxCfgNode, fast_dev_run=False, verbose=True):
+        """
+        Runs a single train loop
+        """
         assert isinstance(cfg, AxCfgNode)
 
         if verbose:

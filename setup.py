@@ -5,7 +5,7 @@ setup(
     version='1.0',
     author='Yigit Ozen',
     packages=find_packages(),
-    install_requires=['numpy', 'h5py', 'tqdm', 'torch', 'torchvision', 'pytorch-lightning',
+    install_requires=['numpy', 'h5py', 'tqdm', 'torch', 'torchvision', 'pytorch-lightning>=0.7',
                       'ax-platform', 'pyyaml', 'yacs'],
     entry_points={
         "console_scripts": [
