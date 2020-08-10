@@ -82,8 +82,9 @@ def automain(function):
         cls, cfg = setup_experiment()
 
         # run main function
-        with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-            function(cls, cfg)
+        # TODO: Fix capture stdout for Windows and re-enable
+        # with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
+        function(cls, cfg)
 
     return function
 

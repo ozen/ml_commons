@@ -18,7 +18,7 @@ class AxCfgNode(CfgNode):
 
         args_from_optimization_trainer = [
             'check_val_every_n_epoch', 'train_percent_check', 'limit_val_batches', 'max_epochs',
-            'min_epochs', 'max_steps', 'min_steps', 'val_check_interval', 'auto_lr_find'
+            'min_epochs', 'max_steps', 'min_steps', 'val_check_interval', 'auto_lr_find', 'overfit_batches'
         ]
 
         depr_arg_names = Trainer.get_deprecated_arg_names()
@@ -78,49 +78,75 @@ _C = AxCfgNode()
 
 # The root path. Defaults to the directory of config file.
 _C.source_path = False
+
 # Module path to the AxLightningModule, relative to source path
 _C.module = 'module.AxLightningModule'
+
 # Path to the experiments directory, relative to source path
 _C.experiments_dir = 'experiments'
+
 # Name of the experiment
 _C.experiment_name = 'default'
+
 # filename patterns relative to the module's directory to be saved to the logs. beware of loops.
 _C.log_files = ['*']
+
 # Path to the data directory
 _C.data_root = 'data'
-#
+
+# how many subprocesses to use for data loading
 _C.num_workers = 0
+
 # Batch size
 _C.batch_size = 256
-#
+
+# Number of saved checkpoints. The best k models will be kept, others will be deleted.
 _C.save_top_k = 5
-#
+
+# Used for k-Fold cross-validation, indicates the fold index to be used for validation.
+_C.current_fold = 0
+
+# If a path to an Ax experiment json file is given, it is used for best parameters
+# and hyperparameter optimization will be skipped
 _C.load_ax_experiment = False
-#
+
+# Number of training steps without improvement needed to trigger early stopping
 _C.train_patience = False
 
+# Number of validation steps without improvement needed to trigger early stopping
 _C.val_patience = False
 
+# Arguments for Lightning's Trainer
 _C.trainer = AxCfgNode(new_allowed=True)
 
+# Configuration for hyperparameter optimization using Ax
 _C.optimization = AxCfgNode()
 
+# Number of hyperparameter optimization trials
 _C.optimization.total_trials = 5
 
+# Number of folds in k-fold cross validation, 0 means disabled
 _C.optimization.k_fold = 0
 
+# List of hyperparameters according to Ax API
 _C.optimization.parameters = []
 
+# Number of training steps without improvement needed to trigger early stopping during hyperparameter optimization
 _C.optimization.train_patience = False
 
+# Number of validation steps without improvement needed to trigger early stopping during hyperparameter optimization
 _C.optimization.val_patience = False
 
+# Number of saved checkpoints during each trial. The best k models will be kept, others will be deleted.
 _C.optimization.save_top_k = 1
 
+# Arguments for Lightning's Trainer to be used for running trials
 _C.optimization.trainer = AxCfgNode(new_allowed=True)
 
+# Fixed hyperparameters
 _C.hparams = AxCfgNode(new_allowed=True)
 
+# Model-specific configuration
 _C.model = AxCfgNode(new_allowed=True)
 
 

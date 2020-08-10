@@ -161,6 +161,7 @@ class AxLightningModule(LightningModule, ABC):
                 return train_and_evaluate(cfg)
             else:
                 # k-fold cross validation
+                logging_logger.info('k-Fold Cross Validation is enabled')
                 metric = 0.0
                 for fold in range(cfg.optimization.k_fold):
                     logging_logger.info(f'Fold {fold+1}/{cfg.optimization.k_fold}')
@@ -168,7 +169,9 @@ class AxLightningModule(LightningModule, ABC):
                     cfg.current_fold = fold
                     cfg.freeze()
                     metric += train_and_evaluate(cfg)
-                return metric / cfg.optimization.k_fold
+                metric = metric / cfg.optimization.k_fold
+                logging_logger.info(f'CV average of best results: {metric}')
+                return metric
 
         return ax_evaluation_function
 
@@ -187,6 +190,7 @@ class AxLightningModule(LightningModule, ABC):
                 fast_dev_run=True,
                 logger=False,
                 checkpoint_callback=False,
+                auto_lr_find=False,
                 weights_summary='full'
             )
             trainer.fit(model)
@@ -247,12 +251,15 @@ class AxLightningModule(LightningModule, ABC):
             callbacks.append(train_loss_early_stop_callback)
 
         if fast_dev_run:
+            trainer_args = cfg.get_trainer_args()
+            del trainer_args['auto_lr_find']
             trainer = Trainer(
                 fast_dev_run=True,
                 logger=False,
                 checkpoint_callback=False,
+                auto_lr_find=False,
                 weights_summary='full',
-                **cfg.get_trainer_args()
+                **trainer_args
             )
             trainer.fit(model)
             del trainer
