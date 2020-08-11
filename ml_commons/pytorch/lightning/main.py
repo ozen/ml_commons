@@ -9,7 +9,7 @@ from argparse import ArgumentParser, FileType
 from ml_commons.pytorch.lightning import AxLightningModule
 from ml_commons.pytorch.lightning.config import get_cfg, AxCfgNode
 from ml_commons.pytorch.lightning.util import override_lightning_logger
-from ml_commons.util.stdout_capturing import capture_stdout
+from ml_commons.util.stdout_capturing import CaptureStdout
 
 
 def setup_experiment(config_file=None):
@@ -82,22 +82,19 @@ def automain(function):
         cls, cfg = setup_experiment()
 
         # run main function
-        # TODO: Fix capture stdout for Windows and re-enable
-        # with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-        function(cls, cfg)
+        with CaptureStdout(os.path.join(cfg.experiment_path, 'cout.txt')):
+            function(cls, cfg)
 
     return function
 
 
 def optimize_and_train():
     cls, cfg = setup_experiment()
-    # TODO: Fix capture stdout for Windows and re-enable
-    # with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-    cls.optimize_and_train(cfg)
+    with CaptureStdout(os.path.join(cfg.experiment_path, 'cout.txt')):
+        cls.optimize_and_train(cfg)
 
 
 def train():
     cls, cfg = setup_experiment()
-    # TODO: Fix capture stdout for Windows and re-enable
-    # with capture_stdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-    cls.fit(cfg, fast_dev_run=True)
+    with CaptureStdout(os.path.join(cfg.experiment_path, 'cout.txt')):
+        cls.fit(cfg, fast_dev_run=True)

@@ -1,62 +1,119 @@
 import os
+import platform
+import shutil
 import sys
 import subprocess
-from contextlib import contextmanager
+from io import StringIO
+from wrapt import ObjectProxy
 
 
-@contextmanager
-def capture_stdout(file_path):
-    """
-    Duplicate stdout and stderr to a file on the file descriptor level.
-    https://github.com/IDSIA/sacred/blob/0c6267943764c57cdf14eef21163454d0322ee77/sacred/stdout_capturing.py
-    http://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
-    http://stackoverflow.com/a/651718/1388435
-    http://stackoverflow.com/a/22434262/1388435
-    """
-    with open(file_path, mode="w+") as target:
-        original_stdout_fd = 1
-        original_stderr_fd = 2
+def flush():
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except (AttributeError, ValueError, OSError):
+        pass  # unsupported
+
+
+class TeeingStreamProxy(ObjectProxy):
+    """A wrapper around stdout or stderr that duplicates all output to out."""
+    def __init__(self, wrapped, out):
+        super().__init__(wrapped)
+        self._self_out = out
+
+    def write(self, data):
+        self.__wrapped__.write(data)
+        self._self_out.write(data)
+
+    def flush(self):
+        self.__wrapped__.flush()
+        self._self_out.flush()
+
+
+class CaptureStdout:
+    def __init__(self, file_path):
+        if platform.system() == "Windows":
+            self.capturer = CaptureStdoutIO(file_path)
+        else:
+            self.capturer = CaptureStdoutFd(file_path)
+
+    def __enter__(self):
+        return self.capturer.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.capturer.__exit__(exc_type, exc_val, exc_tb)
+
+
+class CaptureStdoutFd:
+    """Duplicate stdout and stderr to a file on the file descriptor level."""
+
+    def __init__(self, file_path):
+        self.target = open(file_path, mode="w+", newline="")
+        self.original_stdout_fd = 1
+        self.original_stderr_fd = 2
 
         # Save a copy of the original stdout and stderr file descriptors
-        saved_stdout_fd = os.dup(original_stdout_fd)
-        saved_stderr_fd = os.dup(original_stderr_fd)
+        self.saved_stdout_fd = os.dup(self.original_stdout_fd)
+        self.saved_stderr_fd = os.dup(self.original_stderr_fd)
 
         # start_new_session=True to move process to a new process group
         # this is done to avoid receiving KeyboardInterrupts
-        tee_stdout = subprocess.Popen(
-            ["tee", "-a", target.name],
+        self.tee_stdout = subprocess.Popen(
+            ["tee", "-a", self.target.name],
             start_new_session=True,
             stdin=subprocess.PIPE,
             stdout=1,
         )
-        tee_stderr = subprocess.Popen(
-            ["tee", "-a", target.name],
+        self.tee_stderr = subprocess.Popen(
+            ["tee", "-a", self.target.name],
             start_new_session=True,
             stdin=subprocess.PIPE,
             stdout=2,
         )
 
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os.dup2(tee_stdout.stdin.fileno(), original_stdout_fd)
-        os.dup2(tee_stderr.stdin.fileno(), original_stderr_fd)
+        flush()
+        os.dup2(self.tee_stdout.stdin.fileno(), self.original_stdout_fd)
+        os.dup2(self.tee_stderr.stdin.fileno(), self.original_stderr_fd)
 
-        try:
-            yield sys.stdout
-        finally:
-            sys.stdout.flush()
-            sys.stderr.flush()
+    def __enter__(self):
+        return self.target
 
-            # then redirect stdout back to the saved fd
-            tee_stdout.stdin.close()
-            tee_stderr.stdin.close()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        flush()
 
-            # restore original fds
-            os.dup2(saved_stdout_fd, original_stdout_fd)
-            os.dup2(saved_stderr_fd, original_stderr_fd)
+        # then redirect stdout back to the saved fd
+        self.tee_stdout.stdin.close()
+        self.tee_stderr.stdin.close()
 
-            tee_stdout.wait(timeout=1)
-            tee_stderr.wait(timeout=1)
+        # restore original fds
+        os.dup2(self.saved_stdout_fd, self.original_stdout_fd)
+        os.dup2(self.saved_stderr_fd, self.original_stderr_fd)
 
-            os.close(saved_stdout_fd)
-            os.close(saved_stderr_fd)
+        self.tee_stdout.wait(timeout=1)
+        self.tee_stderr.wait(timeout=1)
+
+        os.close(self.saved_stdout_fd)
+        os.close(self.saved_stderr_fd)
+
+        self.target.flush()
+        self.target.close()
+
+
+class CaptureStdoutIO:
+    """Duplicate sys.stdout and sys.stderr to new StringIO."""
+
+    def __init__(self, file_path):
+        self.target = open(file_path, mode="w+", newline="", buffering=1)
+        self.orig_stdout, self.orig_stderr = sys.stdout, sys.stderr
+        flush()
+        sys.stdout = TeeingStreamProxy(sys.stdout, self.target)
+        sys.stderr = TeeingStreamProxy(sys.stderr, self.target)
+
+    def __enter__(self):
+        return self.target
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        flush()
+        self.target.flush()
+        self.target.close()
+        sys.stdout, sys.stderr = self.orig_stdout, self.orig_stderr

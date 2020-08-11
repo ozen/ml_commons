@@ -6,7 +6,7 @@ setup(
     author='Yigit Ozen',
     packages=find_packages(),
     install_requires=['numpy', 'h5py', 'tqdm', 'torch', 'torchvision', 'pytorch-lightning>=0.7',
-                      'ax-platform', 'pyyaml', 'yacs'],
+                      'ax-platform', 'pyyaml', 'yacs', 'wrapt'],
     entry_points={
         "console_scripts": [
             "train = ml_commons.pytorch.lightning.main:train",

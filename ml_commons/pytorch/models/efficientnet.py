@@ -6,7 +6,7 @@ from . import StitchedModel
 
 
 def get_efficientnet_encoder(in_channels, out_channels=1024, layers=None, pretrained=None, norm_layer=nn.Identity):
-    #TODO
+    # TODO
     if layers is None:
         layers = [3, 4, 6, 3]
     encoder = ResNet(Bottleneck, layers, norm_layer=norm_layer)
