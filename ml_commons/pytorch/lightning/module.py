@@ -100,6 +100,22 @@ class AxLightningModule(LightningModule, ABC):
         return train_loss_early_stop_callback, early_stop_callback
 
     @classmethod
+    def _get_checkpoint_callback(cls, filepath, save_top_k):
+        if cls.objective_name is not None:
+            checkpoint_callback = ModelCheckpoint(
+                filepath=filepath,
+                monitor=cls.objective_name,
+                mode='min' if cls.minimize_objective else 'max',
+                save_top_k=save_top_k
+            )
+        else:
+            checkpoint_callback = ModelCheckpoint(
+                filepath=filepath,
+                save_top_k=-1
+            )
+        return checkpoint_callback
+
+    @classmethod
     def _get_ax_evaluation_function(cls, config: AxCfgNode):
         def train_and_evaluate(cfg):
             # create the model
@@ -118,21 +134,12 @@ class AxLightningModule(LightningModule, ABC):
 
             # configure model checkpointing
             if cfg.optimization.save_top_k is not None and cfg.optimization.save_top_k > 0:
-                if cls.objective_name is not None:
-                    checkpoint_callback = ModelCheckpoint(
-                        filepath=os.path.join(cfg.experiment_path, 'checkpoints', 'trials',
-                                              datetime.now().strftime('%y%m%d_%H%M%S'),
-                                              f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
-                        monitor=cls.objective_name,
-                        mode='min' if cls.minimize_objective else 'max',
-                        save_top_k=cfg.optimization.save_top_k
-                    )
-                else:
-                    checkpoint_callback = ModelCheckpoint(
-                        filepath=os.path.join(cfg.experiment_path, 'checkpoints', 'trials',
-                                              datetime.now().isoformat(), '{epoch}'),
-                        save_top_k=cfg.optimization.save_top_k
-                    )
+                checkpoint_callback = cls._get_checkpoint_callback(
+                    filepath=os.path.join(cfg.experiment_path, 'checkpoints', 'trials',
+                                          datetime.now().strftime('%y%m%d_%H%M%S'),
+                                          f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
+                    save_top_k=cfg.optimization.save_top_k
+                )
             else:
                 checkpoint_callback = None
 
@@ -164,7 +171,7 @@ class AxLightningModule(LightningModule, ABC):
                 logging_logger.info('k-Fold Cross Validation is enabled')
                 metric = 0.0
                 for fold in range(cfg.optimization.k_fold):
-                    logging_logger.info(f'Fold {fold+1}/{cfg.optimization.k_fold}')
+                    logging_logger.info(f'Fold {fold + 1}/{cfg.optimization.k_fold}')
                     cfg.defrost()
                     cfg.current_fold = fold
                     cfg.freeze()
@@ -229,20 +236,17 @@ class AxLightningModule(LightningModule, ABC):
         model = cls(cfg)
         callbacks = []
 
+        # dump the last version of the config
+        with open(os.path.join(cfg.experiment_path, 'final_config.yaml'), 'w') as f:
+            cfg.dump(stream=f)
+
         tensorboard_logger = TensorBoardLogger(os.path.join(cfg.experiment_path, 'tensorboard_logs'), name='')
 
-        if cls.objective_name is not None:
-            checkpoint_callback = ModelCheckpoint(
-                filepath=os.path.join(cfg.experiment_path, 'checkpoints', f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
-                monitor=cls.objective_name,
-                mode='min' if cls.minimize_objective else 'max',
-                save_top_k=cfg.save_top_k
-            )
-        else:
-            checkpoint_callback = ModelCheckpoint(
-                filepath=os.path.join(cfg.experiment_path, 'checkpoints', '{epoch}'),
-                save_top_k=-1
-            )
+        # configure model checkpointing
+        checkpoint_callback = cls._get_checkpoint_callback(
+            filepath=os.path.join(cfg.experiment_path, 'checkpoints', f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
+            save_top_k=cfg.save_top_k
+        )
 
         # configure early stopping
         train_loss_early_stop_callback, early_stop_callback = cls._get_early_stopping_callbacks(
@@ -274,3 +278,38 @@ class AxLightningModule(LightningModule, ABC):
             **cfg.get_trainer_args()
         )
         trainer.fit(model)
+        trainer.save_checkpoint(os.path.join(cfg.experiment_path, 'checkpoints', 'final.ckpt'))
+
+    @classmethod
+    def resume_training(cls, checkpoint_path, override_cfg=None):
+        model = cls.load_from_checkpoint(checkpoint_path)
+        cfg = model.cfg
+        if override_cfg is not None:
+            cfg.merge_from_list(override_cfg)
+
+        callbacks = []
+
+        tensorboard_logger = TensorBoardLogger(os.path.join(cfg.experiment_path, 'tensorboard_logs'), name='')
+
+        # configure model checkpointing
+        checkpoint_callback = cls._get_checkpoint_callback(
+            filepath=os.path.join(cfg.experiment_path, 'checkpoints', f'{{epoch}}-{{{cls.objective_name}:.2f}}'),
+            save_top_k=cfg.save_top_k
+        )
+
+        # configure early stopping
+        train_loss_early_stop_callback, early_stop_callback = cls._get_early_stopping_callbacks(
+            cfg.train_patience, cfg.val_patience)
+        if train_loss_early_stop_callback is not None:
+            callbacks.append(train_loss_early_stop_callback)
+
+        trainer = Trainer(
+            resume_from_checkpoint=checkpoint_path,
+            logger=tensorboard_logger,
+            checkpoint_callback=checkpoint_callback,
+            early_stop_callback=early_stop_callback,
+            callbacks=callbacks,
+            **cfg.get_trainer_args()
+        )
+        trainer.fit(model)
+        trainer.save_checkpoint(os.path.join(cfg.experiment_path, 'checkpoints', 'final.ckpt'))
