@@ -48,7 +48,7 @@ class CaptureStdoutFd:
     """Duplicate stdout and stderr to a file on the file descriptor level."""
 
     def __init__(self, file_path):
-        self.target = open(file_path, mode="w+", newline="")
+        self.target = open(file_path, mode="w+", newline="", encoding='utf-8')
         self.original_stdout_fd = 1
         self.original_stderr_fd = 2
 
@@ -103,7 +103,7 @@ class CaptureStdoutIO:
     """Duplicate sys.stdout and sys.stderr to new StringIO."""
 
     def __init__(self, file_path):
-        self.target = open(file_path, mode="w+", newline="", buffering=1)
+        self.target = open(file_path, mode="w+", newline="", buffering=1, encoding='utf-8')
         self.orig_stdout, self.orig_stderr = sys.stdout, sys.stderr
         flush()
         sys.stdout = TeeingStreamProxy(sys.stdout, self.target)
