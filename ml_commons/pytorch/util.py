@@ -66,3 +66,18 @@ def subset_state_dict(state_dict, key):
         if f'{key}.' in k:
             new_state_dict[k.replace(f'{key}.', '')] = v
     return new_state_dict
+
+
+def weight_averaging(model_class, checkpoint_paths, data_loader, device):
+    from torch.optim.swa_utils import AveragedModel, update_bn
+
+    model = model_class.load_from_checkpoint(checkpoint_paths[0])
+    swa_model = AveragedModel(model)
+
+    for path in checkpoint_paths:
+        model = model_class.load_from_checkpoint(path)
+        swa_model.update_parameters(model)
+
+    swa_model = swa_model.to(device)
+    update_bn(data_loader, swa_model, device)
+    return swa_model

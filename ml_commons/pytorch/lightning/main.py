@@ -4,46 +4,48 @@ import inspect
 import shutil
 from glob import glob
 from importlib import import_module
-from argparse import ArgumentParser, FileType
 
-from ml_commons.pytorch.lightning import AxLightningModule
-from ml_commons.pytorch.lightning.config import get_cfg, AxCfgNode
+from ml_commons.pytorch.lightning.config import get_cfg, LightningCfgNode
+from ml_commons.pytorch.lightning.experimenter import Experimenter
 from ml_commons.pytorch.lightning.util import override_lightning_logger
 from ml_commons.util.stdout_capturing import CaptureStdout
 
 
+def import_modules(cfg: LightningCfgNode):
+    # import model module
+    module_parts = cfg.module.split('.')
+    model_module = import_module('.'.join(module_parts[:-1]))
+    model_module_class = getattr(model_module, module_parts[-1])
+
+    # import data module
+    module_parts = cfg.data_module.split('.')
+    data_module = import_module('.'.join(module_parts[:-1]))
+    data_module_class = getattr(data_module, module_parts[-1])
+
+    return model_module_class, data_module_class
+
+
 def setup_experiment(config_file=None):
     """
-    Sets up the experiment, returns experiment's AxLightningModule and configuration object.
+    Sets up the experiment, returns experiment's LightningModule and configuration object.
     """
     # override lightning logger to match its style with ours
     override_lightning_logger()
 
-    if config_file is None:
-        # parse config_file input argument
-        parser = ArgumentParser()
-        parser.add_argument('config_file', type=FileType('r'))
-        args = parser.parse_args()
-        config_file = args.config_file.name
-
     # create the config dictionary
-    cfg: AxCfgNode = get_cfg(config_file)
+    cfg: LightningCfgNode = get_cfg(config_file)
 
     # add source path to the sys.path for module import
     sys.path.append(cfg.source_path)
 
-    # import experiment module
-    module_parts = cfg.module.split('.')
-    module = import_module('.'.join(module_parts[:-1]))
-    cls: AxLightningModule = getattr(module, module_parts[-1])
+    # import model and data modules
+    model_module_class, data_module_class = import_module(cfg)
 
     # merge model config
-    if hasattr(cls, 'get_model_cfg'):
-        model_cfg: AxCfgNode = cls.get_model_cfg()
-        model_cfg.merge_from_other_cfg(cfg.model)
-        cfg.defrost()
-        cfg.model = model_cfg
-        cfg.freeze()
+    cfg.merge_get_cfg('model', model_module_class)
+
+    # merge data config
+    cfg.merge_get_cfg('data', data_module_class)
 
     # create experiment directory
     os.makedirs(cfg.experiment_path)
@@ -52,7 +54,8 @@ def setup_experiment(config_file=None):
     shutil.copy(config_file, os.path.join(cfg.experiment_path, os.path.basename(config_file)))
 
     # copy sources
-    module_path = inspect.getfile(module)
+    model_module = import_module('.'.join(cfg.module.split('.')[:-1]))
+    module_path = inspect.getfile(model_module)
     module_dir = os.path.dirname(module_path)
     dest_dir = os.path.join(cfg.experiment_path, 'source')
     os.makedirs(dest_dir, exist_ok=True)
@@ -62,7 +65,7 @@ def setup_experiment(config_file=None):
                 os.makedirs(os.path.dirname(source_file), exist_ok=True)
                 shutil.copy(source_file, os.path.join(dest_dir, os.path.basename(source_file)))
 
-    return cls, cfg
+    return model_module_class, data_module_class, cfg
 
 
 def automain(function):
@@ -79,22 +82,38 @@ def automain(function):
             raise RuntimeError("Cannot use @automain decorator in interactive mode.")
 
         # setup the experiment
-        cls, cfg = setup_experiment()
+        model_class, data_class, cfg = setup_experiment()
 
         # run main function
-        with CaptureStdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-            function(cls, cfg)
+        with CaptureStdout(os.path.join(cfg.experiment_path, 'stdout.txt')):
+            function(model_class, data_class, cfg)
 
     return function
 
 
-def optimize_and_train():
-    cls, cfg = setup_experiment()
-    with CaptureStdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-        cls.optimize_and_train(cfg)
+def optimize_and_fit():
+    experimenter = Experimenter()
+    with CaptureStdout(os.path.join(experimenter.cfg.experiment_path, 'stdout.txt')):
+        experimenter.optimize_and_fit()
 
 
-def train():
-    cls, cfg = setup_experiment()
-    with CaptureStdout(os.path.join(cfg.experiment_path, 'cout.txt')):
-        cls.fit(cfg, fast_dev_run=True)
+def fit():
+    experimenter = Experimenter()
+    with CaptureStdout(os.path.join(experimenter.cfg.experiment_path, 'stdout.txt')):
+        experimenter.fit(fast_dev_run=True)
+
+
+def resume():
+    from argparse import ArgumentParser
+    from argparse import FileType
+
+    parser = ArgumentParser()
+    parser.add_argument('config_file', type=FileType('r'))
+    parser.add_argument('checkpoint_file', type=FileType('r'))
+    args = parser.parse_args()
+    config_file_path = args.config_file.name
+    checkpoint_file_path = args.checkpoint_file.name
+
+    experimenter = Experimenter(config_file_path)
+    with CaptureStdout(os.path.join(experimenter.cfg.experiment_path, 'stdout.txt')):
+        experimenter.resume(checkpoint_file_path)

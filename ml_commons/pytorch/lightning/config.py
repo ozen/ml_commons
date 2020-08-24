@@ -1,86 +1,20 @@
 import os
+from argparse import ArgumentParser, FileType
 
-from pytorch_lightning import Trainer
-from yacs.config import CfgNode
-
-from ml_commons.util.path import uniquify_path
-
-
-class AxCfgNode(CfgNode):
-    def get_optimization_trainer_args(self):
-        trainer_args = {}
-
-        args_from_main_trainer = [
-            'gradient_clip_val', 'process_position', 'num_nodes', 'gpus', 'num_tpu_cores',
-            'log_gpu_memory', 'progress_bar_refresh_rate', 'accumulate_grad_batches', 'auto_lr_find',
-            'distributed_backend', 'amp_level', 'reload_dataloaders_every_epoch', 'precision'
-        ]
-
-        args_from_optimization_trainer = [
-            'check_val_every_n_epoch', 'train_percent_check', 'limit_val_batches', 'max_epochs',
-            'min_epochs', 'max_steps', 'min_steps', 'val_check_interval', 'auto_lr_find', 'overfit_batches'
-        ]
-
-        depr_arg_names = Trainer.get_deprecated_arg_names()
-
-        for arg, arg_types, arg_default in Trainer.get_init_arguments_and_types():
-            if arg not in depr_arg_names:
-                if arg in args_from_main_trainer and arg in self.trainer:
-                    trainer_args[arg] = self.trainer[arg]
-                if arg in args_from_optimization_trainer and arg in self.optimization.trainer:
-                    trainer_args[arg] = self.optimization.trainer[arg]
-
-        return trainer_args
-
-    def get_trainer_args(self):
-        trainer_args = {}
-
-        allowed_args = [
-            'gradient_clip_val', 'process_position', 'num_nodes', 'num_processes', 'gpus', 'num_tpu_cores',
-            'log_gpu_memory', 'progress_bar_refresh_rate', 'overfit_batches', 'track_grad_norm',
-            'accumulate_grad_batches', 'distributed_backend', 'amp_level', 'reload_dataloaders_every_epoch',
-            'precision', 'check_val_every_n_epoch', 'train_percent_check', 'limit_val_batches',
-            'limit_test_batches', 'max_epochs', 'min_epochs', 'max_steps', 'min_steps', 'val_check_interval',
-            'log_save_interval', 'row_log_interval', 'add_row_log_interval', 'print_nan_grads',
-            'terminate_on_nan', 'auto_lr_find'
-        ]
-
-        depr_arg_names = Trainer.get_deprecated_arg_names()
-
-        for arg, arg_types, arg_default in Trainer.get_init_arguments_and_types():
-            if arg not in depr_arg_names and arg in allowed_args and arg in self.trainer:
-                trainer_args[arg] = self.trainer[arg]
-
-        return trainer_args
-
-    def get_random_hparams(self):
-        hparams = {}
-        for param in self.optimization.parameters:
-            if param['type'] == 'range':
-                hparams[param['name']] = param['bounds'][0]
-            elif param['type'] == 'choice':
-                hparams[param['name']] = param['values'][0]
-        return hparams
-
-    def clone_with_hparams(self, hparams):
-        cfg = self.clone()
-        cfg.defrost()
-        cfg.hparams = CfgNode(hparams)
-        cfg.freeze()
-        return cfg
-
-    def clone_with_random_hparams(self):
-        hparams = self.get_random_hparams()
-        return self.clone_with_hparams(hparams)
+from ml_commons.pytorch.lightning.cfgnode import LightningCfgNode
+from ml_commons.util.path import timestamp_path
 
 
-_C = AxCfgNode()
+_C = LightningCfgNode()
 
 # The root path. Defaults to the directory of config file.
 _C.source_path = False
 
-# Module path to the AxLightningModule, relative to source path
-_C.module = 'module.AxLightningModule'
+# Module path to the MLCModule, relative to source path
+_C.module = 'module.Module'
+
+# Module path to the MLCDataModule, relative to source path
+_C.data_module = 'module.DataModule'
 
 # Path to the experiments directory, relative to source path
 _C.experiments_dir = 'experiments'
@@ -91,9 +25,6 @@ _C.experiment_name = 'default'
 # filename patterns relative to the module's directory to be saved to the logs. beware of loops.
 _C.log_files = ['*']
 
-# Path to the data directory
-_C.data_root = 'data'
-
 # how many subprocesses to use for data loading
 _C.num_workers = 0
 
@@ -102,6 +33,12 @@ _C.batch_size = 256
 
 # Number of saved checkpoints. The best k models will be kept, others will be deleted.
 _C.save_top_k = 5
+
+# variable name of the objective
+_C.objective_name = 'val_loss'
+
+# True if we want to minimize the objective variable
+_C.minimize_objective = True
 
 # Used for k-Fold cross-validation, indicates the fold index to be used for validation.
 _C.current_fold = 0
@@ -117,10 +54,10 @@ _C.train_patience = False
 _C.val_patience = False
 
 # Arguments for Lightning's Trainer
-_C.trainer = AxCfgNode(new_allowed=True)
+_C.trainer = LightningCfgNode(new_allowed=True)
 
 # Configuration for hyperparameter optimization using Ax
-_C.optimization = AxCfgNode()
+_C.optimization = LightningCfgNode()
 
 # Number of hyperparameter optimization trials
 _C.optimization.total_trials = 5
@@ -141,16 +78,26 @@ _C.optimization.val_patience = False
 _C.optimization.save_top_k = 1
 
 # Arguments for Lightning's Trainer to be used for running trials
-_C.optimization.trainer = AxCfgNode(new_allowed=True)
+_C.optimization.trainer = LightningCfgNode(new_allowed=True)
 
-# Fixed hyperparameters
-_C.hparams = AxCfgNode(new_allowed=True)
+# Hyperparameters
+_C.hparams = LightningCfgNode(new_allowed=True)
 
 # Model-specific configuration
-_C.model = AxCfgNode(new_allowed=True)
+_C.model = LightningCfgNode(new_allowed=True)
+
+# DataModule-specific configuration
+_C.data = LightningCfgNode(new_allowed=True)
 
 
 def get_cfg(config_file_path):
+    if config_file_path is None:
+        # parse config_file input argument
+        parser = ArgumentParser()
+        parser.add_argument('config_file', type=FileType('r'))
+        args = parser.parse_args()
+        config_file_path = args.config_file.name
+
     cfg = _C.clone()
     cfg.merge_from_file(config_file_path)
 
@@ -158,7 +105,7 @@ def get_cfg(config_file_path):
         cfg.source_path = os.path.dirname(config_file_path)
 
     cfg.source_path = os.path.abspath(cfg.source_path)
-    cfg.experiment_path = uniquify_path(os.path.join(cfg.source_path, cfg.experiments_dir, cfg.experiment_name))
+    cfg.experiment_path = timestamp_path(os.path.join(cfg.source_path, cfg.experiments_dir, cfg.experiment_name))
 
     cfg.freeze()
     return cfg
