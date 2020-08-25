@@ -8,7 +8,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 from ml_commons.ax import load_ax_experiment
 from ml_commons.pytorch.lightning.callbacks import BatchEarlyStopping, ObjectiveMonitor
-from ml_commons.pytorch.lightning.main import setup_experiment
+from ml_commons.pytorch.lightning.experiment import setup_experiment
 from ml_commons.util.logger import get_logger
 
 logging_logger = get_logger()

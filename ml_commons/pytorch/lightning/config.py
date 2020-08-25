@@ -101,6 +101,8 @@ def get_cfg(config_file_path):
     cfg = _C.clone()
     cfg.merge_from_file(config_file_path)
 
+    cfg.config_file_path = config_file_path
+
     if cfg.source_path is False:
         cfg.source_path = os.path.dirname(config_file_path)
 

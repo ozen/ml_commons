@@ -10,7 +10,7 @@ class LightningCfgNode(CfgNode):
             'gradient_clip_val', 'process_position', 'num_nodes', 'num_processes', 'gpus', 'num_tpu_cores',
             'log_gpu_memory', 'progress_bar_refresh_rate', 'overfit_batches', 'track_grad_norm',
             'accumulate_grad_batches', 'distributed_backend', 'amp_level', 'reload_dataloaders_every_epoch',
-            'precision', 'check_val_every_n_epoch', 'train_percent_check', 'limit_val_batches',
+            'precision', 'check_val_every_n_epoch', 'train_percent_check', 'limit_train_batches', 'limit_val_batches',
             'limit_test_batches', 'max_epochs', 'min_epochs', 'max_steps', 'min_steps', 'val_check_interval',
             'log_save_interval', 'row_log_interval', 'add_row_log_interval', 'print_nan_grads',
             'terminate_on_nan', 'auto_lr_find'
@@ -34,8 +34,9 @@ class LightningCfgNode(CfgNode):
         ]
 
         args_from_optimization_trainer = [
-            'check_val_every_n_epoch', 'train_percent_check', 'limit_val_batches', 'max_epochs',
-            'min_epochs', 'max_steps', 'min_steps', 'val_check_interval', 'auto_lr_find', 'overfit_batches'
+            'check_val_every_n_epoch', 'train_percent_check', 'limit_train_batches', 'limit_val_batches',
+            'limit_test_batches', 'max_epochs', 'min_epochs', 'max_steps', 'min_steps',
+            'val_check_interval', 'auto_lr_find', 'overfit_batches'
         ]
 
         depr_arg_names = Trainer.get_deprecated_arg_names()
