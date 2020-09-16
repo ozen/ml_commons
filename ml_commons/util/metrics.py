@@ -14,9 +14,9 @@ def mean_average_precision(correct):
 def tpr_at_tnr(probs, labels, at_tnr):
     import torch
     if isinstance(probs, torch.Tensor):
-        probs = probs.cpu().numpy()
+        probs = probs.detach().cpu().numpy()
     if isinstance(labels, torch.Tensor):
-        labels = labels.cpu().numpy()
+        labels = labels.detach().cpu().numpy()
 
     probs = probs.flatten()
     labels = labels.flatten()
