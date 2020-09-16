@@ -14,9 +14,12 @@ def mean_average_precision(correct):
 def tpr_at_tnr(probs, labels, at_tnr):
     import torch
     if isinstance(probs, torch.Tensor):
-        probs = probs.flatten().cpu().numpy()
+        probs = probs.cpu().numpy()
     if isinstance(labels, torch.Tensor):
-        labels = labels.flatten().cpu().numpy()
+        labels = labels.cpu().numpy()
+
+    probs = probs.flatten()
+    labels = labels.flatten()
 
     fpr, tpr, _ = roc_curve(labels, probs)
     tnr = 1 - fpr   # in decreasing order
