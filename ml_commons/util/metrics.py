@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 from sklearn.metrics import average_precision_score, roc_curve
 
@@ -21,7 +22,12 @@ def tpr_at_tnr(probs, labels, at_tnr):
     probs = probs.flatten()
     labels = labels.flatten()
 
-    fpr, tpr, _ = roc_curve(labels, probs)
+    try:
+        fpr, tpr, _ = roc_curve(labels, probs)
+    except ValueError:
+        warnings.warn('Could not calculate roc curve due to a ValueError')
+        return 0
+
     tnr = 1 - fpr   # in decreasing order
     for idx in range(1, len(tnr)):
         if tnr[idx] < at_tnr:
