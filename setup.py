@@ -2,9 +2,8 @@ from setuptools import setup, find_packages
 
 setup(
     name='ml_commons',
-    version='2.0.2',
+    version='2.1.0',
     author='Yigit Ozen',
     packages=find_packages(),
-    install_requires=['numpy', 'h5py', 'tqdm', 'torch', 'torchvision', 'pytorch-lightning>=0.9',
-                      'pyyaml', 'yacs', 'wrapt'],
+    install_requires=['numpy', 'tqdm', 'pytorch-lightning>=1.0.2', 'pyyaml', 'yacs'],
 )
