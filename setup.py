@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='ml_commons',
-    version='2.1.0',
+    version='2.2.0',
     author='Yigit Ozen',
     packages=find_packages(),
     install_requires=['numpy', 'tqdm'],
