@@ -6,10 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.3.0] - 2020-10-10
+## [2.3.0] - 2020-11-10
 ### Added
 - BinaryFocalLoss in pytorch/losses package
 
-## [2.2.0] - 2020-10-03
+## [2.2.0] - 2020-11-03
 ### Added
 - stratified_select_indices helper function
